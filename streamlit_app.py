@@ -8,7 +8,7 @@ import numpy as np
 # FitBit Data
 '''
 
-@st.cache(suppress_st_warning=True, show_spinner=True)
+@st.cache(suppress_st_warning=True, show_spinner=False)
 def load_data(string, list_dir = '../DanielCorley/user-site-export'):
     
     '''
@@ -27,14 +27,13 @@ def load_data(string, list_dir = '../DanielCorley/user-site-export'):
     
     try:
         df = pd.read_pickle(file_dict[string])
-        st.spinner('loading from pickle')
+        st.write('pickle')
         return df
+    
     except IOError:
-        st.spinner('loading from file storage')
-        files = [x for x in os.listdir(list_dir) if x[:3] == string[:3]][:4]
-        st.write(f'example file name: {files[0]}')
+        files = [x for x in os.listdir(list_dir) if x[:3] == string[:3]][:3000]
         num_files = len(files)
-        st.write(f'number of files: {num_files}')
+        txt = st.write(f'number of files: {num_files}')
         
         file_type = None
         try:
@@ -45,7 +44,7 @@ def load_data(string, list_dir = '../DanielCorley/user-site-export'):
             file_type = 'csv'
             st.spinner('loading csv')
             
-        # iterate over the files and append to one dataframe
+#         iterate over the files and append to one dataframe
         df = pd.DataFrame()
         my_bar = st.progress(0)
         
@@ -57,59 +56,66 @@ def load_data(string, list_dir = '../DanielCorley/user-site-export'):
                 df = df.append(pd.read_json(f'{list_dir}/{file}'))
             else:
                 df = df.append(pd.read_csv(f'{list_dir}/{file}'))
-#         df.to_pickle(file_dict[string
             my_bar.progress(num_list[i+1])
-        st.write(string)
-        if string in ['steps', 'distance', 'heart']:
-            df['dateTime'] = pd.to_datetime(df.dateTime)
-            df.set_index('dateTime', inplace=True)
-        elif string in ['sleep']:
-            df.startTime = pd.to_datetime(df.startTime)
-            df.set_index('startTime', inplace=True)
-        else:
-            df.timestamp = pd.to_datetime(df.timestamp)
-            df.set_index('timestamp', inplace=True)
+            
+        my_bar.empty()
+        
+        with st.spinner('processing datetime'):
+            if string in ['steps', 'distance', 'heart']:
+                df['dateTime'] = pd.to_datetime(df['dateTime'])
+                df.set_index('dateTime', inplace=True)
+            elif string in ['sleep']:
+                df['startTime'] = pd.to_datetime(df['startTime'])
+                df.set_index('startTime', inplace=True)
+                
+            else:
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                df.set_index('timestamp', inplace=True)
+                df.rename(columns={'Infrared to Red Signal Ratio':'oxy'}, inplace=True)
+        
+        df.to_pickle(file_dict[string])
+        
         
         return df
         
         
 value = st.selectbox('what data would you like to look at?', ['Select Data:','steps', 'distance', 'heart', 'sleep', 'est_oxygen'])
 
-file = st.file_uploader('upload')
+if value != 'Select Data:':
+    
+    df = load_data(value)
+    
+    min_date = st.sidebar.date_input('min date', df.index.min())
+    max_date = st.sidebar.date_input('max date', df.index.max())
 
-if file:
-    df = pd.read_csv(file)
-    df.Month = pd.to_datetime(df.Month)
-    df.set_index('Month', inplace=True)
-    mn = df['Thousands of Passengers'].max()
-    mx = df['Thousands of Passengers'].min()
+    df_size = df.loc[f'{min_date}':f'{max_date}'].shape
     
+    resamp = st.selectbox('How do you want to see the data', ['daily','weekly'])
+    df = df.loc[f'{min_date}':f'{max_date}']
     
-    usr_input = st.number_input('more than?',value = 0, min_value=0, max_value= 300, step=10)
-    if usr_input:
-        df[df['Thousands of Passengers'] > usr_input].shape
-    
-# if file:
-#     file = pd.read_csv(file, index_col = 0)
-#     file_shape = file.shape[0]
-#     num = st.number_input(f'insert a number smaller than {file_shape}',1)
-#     if num >= file_shape:
-#         st.error('number must be smaller!')
-#     else:
-#         file[['artist', 'album', 'song_title', 'sentiment']].iloc[num]
+    if value == 'heart':
+        df['bpm'] = df.value.map(lambda x: x['bpm'])
+        df.drop(columns=['value'], inplace=True)
+        if resamp == 'daily':
+            df = df.resample('d').mean()   
+        elif resamp == 'weekly':
+            df = df.resample('w').mean()
+    elif value == 'sleep':
+            df = df['minutesAsleep']
+            if resamp == 'daily':
+                df = df.resample('d').mean()/60
+            elif resamp == 'weekly':
+                df = df.resample('w').mean()/60
 
-# if value != 'Select Data:':
-
-#     st.write(value)
+    else:
+        if resamp == 'daily':
+            df = df.resample('d').sum()   
+        elif resamp == 'weekly':
+            df = df.resample('w').sum()
+        
+    f'dataframe size: {df.shape}' 
     
-#     df = load_data(value)
+    st.line_chart(df)
     
-#     min_date = st.date_input('min date', df.index.min())
-#     max_date = st.date_input('max date', df.index.max())
-
-#     df.rename(columns={'Infrared to Red Signal Ratio':'a'}, inplace=True)
-
-#     df_size = df.loc[f'{min_date}':f'{max_date}'].shape
-    
-#     f'dataframe size: {df.shape}' 
-#     df
+if st.checkbox('show data'):
+    st.write(df)
