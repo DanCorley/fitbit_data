@@ -5,11 +5,13 @@ import streamlit as st
 import numpy as np
 
 '''
-# FitBit Data
+## FitBit Data
+This is real-world data for myself.\n
+Select from the data values, and frequency. You may also change the time period by clicking the arrow in the top-left corner.
 '''
 
 @st.cache(suppress_st_warning=True, show_spinner=False)
-def load_data(string, list_dir = '../DanielCorley/user-site-export'):
+def load_data(string, list_dir = '../DanielCorley/user-site-export', save=False):
     
     '''
     pass in the first three letters of the file you're trying to load:
@@ -18,23 +20,25 @@ def load_data(string, list_dir = '../DanielCorley/user-site-export'):
     file_dict = {
         'steps': 'step_df',
         'distance': 'dist_df',
-        'heart': 'heart_df',
+        'heart_rate': 'heart_df',
         'sleep': 'sleep_df',
         'est_oxygen': 'oxy_df'
     }
-    if string not in file_dict:
-        raise Exception('string not recognized!')
     
     try:
         df = pd.read_pickle(file_dict[string])
-        st.write('pickle')
+        if string == 'sleep':
+            df.rename(columns={'minutesAsleep':'hoursAsleep'}, inplace=True)
         return df
     
+    # while deployed, this will come into play when allowing users to upload their own files
     except IOError:
+        # show files that contain the data we are loading
         files = [x for x in os.listdir(list_dir) if x[:3] == string[:3]][:3000]
         num_files = len(files)
         txt = st.write(f'number of files: {num_files}')
         
+        # deciding if we will be loading jsons or csvs
         file_type = None
         try:
             pd.read_json(f'{list_dir}/{files[0]}')
@@ -44,22 +48,24 @@ def load_data(string, list_dir = '../DanielCorley/user-site-export'):
             file_type = 'csv'
             st.spinner('loading csv')
             
-#         iterate over the files and append to one dataframe
+        # iterate over the files and append to one dataframe
         df = pd.DataFrame()
+        # instantiate loading bar
         my_bar = st.progress(0)
-        
         num_list = [int(x) for x in np.linspace(0,100, num_files+1)]
         
         for i,file in enumerate(files):
-            
             if file_type == 'json':
                 df = df.append(pd.read_json(f'{list_dir}/{file}'))
             else:
                 df = df.append(pd.read_csv(f'{list_dir}/{file}'))
+                
+            # add to the progress bar by num files already loaded
             my_bar.progress(num_list[i+1])
-            
+        # delete progress bar
         my_bar.empty()
         
+        # to_datetime
         with st.spinner('processing datetime'):
             if string in ['steps', 'distance', 'heart']:
                 df['dateTime'] = pd.to_datetime(df['dateTime'])
@@ -67,55 +73,57 @@ def load_data(string, list_dir = '../DanielCorley/user-site-export'):
             elif string in ['sleep']:
                 df['startTime'] = pd.to_datetime(df['startTime'])
                 df.set_index('startTime', inplace=True)
-                
+                df.rename(columns={'minutesAsleep':'hoursAsleep'}, inplace=True)
             else:
                 df['timestamp'] = pd.to_datetime(df['timestamp'])
                 df.set_index('timestamp', inplace=True)
                 df.rename(columns={'Infrared to Red Signal Ratio':'oxy'}, inplace=True)
-        
-        df.to_pickle(file_dict[string])
-        
+        if save:
+            df.to_pickle(file_dict[string])
         
         return df
         
         
-value = st.selectbox('what data would you like to look at?', ['Select Data:','steps', 'distance', 'heart', 'sleep', 'est_oxygen'])
+value = st.selectbox('what data would you like to look at?', ['Select Data:','steps', 'distance', 'heart_rate', 'sleep', 'est_oxygen'])
 
 if value != 'Select Data:':
     
-    df = load_data(value)
+    df = load_data(value).fillna(method='bfill')
     
     min_date = st.sidebar.date_input('min date', df.index.min())
     max_date = st.sidebar.date_input('max date', df.index.max())
 
     df_size = df.loc[f'{min_date}':f'{max_date}'].shape
     
-    resamp = st.selectbox('How do you want to see the data', ['daily','weekly'])
+    resamp = st.selectbox('how do you want to see the data?', ['daily','weekly'])
     df = df.loc[f'{min_date}':f'{max_date}']
     
-    if value == 'heart':
-        df['bpm'] = df.value.map(lambda x: x['bpm'])
-        df.drop(columns=['value'], inplace=True)
-        if resamp == 'daily':
-            df = df.resample('d').mean()   
-        elif resamp == 'weekly':
-            df = df.resample('w').mean()
-    elif value == 'sleep':
-            df = df['minutesAsleep']
-            if resamp == 'daily':
-                df = df.resample('d').mean()/60
-            elif resamp == 'weekly':
-                df = df.resample('w').mean()/60
-
-    else:
-        if resamp == 'daily':
-            df = df.resample('d').sum()   
-        elif resamp == 'weekly':
-            df = df.resample('w').sum()
-        
-    f'dataframe size: {df.shape}' 
+    rolling = st.checkbox('rolling avg?')
     
+    if value in ['heart_rate','sleep']:
+        if resamp == 'weekly':
+            df = df.resample('w').mean()
+            average = df.iloc[:,0].mean()
+        else:
+            average = df.iloc[:,0].mean()
+    else:
+        if resamp == 'weekly':
+            df = df.resample('w').sum()
+            average = df.iloc[:,0].mean()
+        else:
+            average = df.iloc[:,0].mean()
+    
+    if rolling:
+        if resamp == 'weekly':
+            df['rolling_week'] = df.rolling(4).mean()
+        else:
+            df['rolling'] = df.rolling(30).mean()
+    
+    if value == 'sleep':
+        'This may look low, but FitBit has a "sensitive" sleep setting, which is the lower. More on that [here](https://community.fitbit.com/t5/Sleep-Better/Inaccurate-Sleep-Log-Change-your-settings/td-p/1406238)'
+    
+    st.write(f'average {resamp} {value}: {int(average):,d}'.replace('_',' '))
     st.line_chart(df)
     
-if st.checkbox('show data'):
-    st.write(df)
+    if st.checkbox('show data'):
+        st.write(df)
