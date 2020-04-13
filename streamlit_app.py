@@ -17,17 +17,22 @@ def load_data(string, list_dir = '../DanielCorley/user-site-export', save=False)
         ['steps', 'distance', 'heart', 'sleep', 'est_oxygen']
     '''
     file_dict = {
-        'steps': 'step_df',
-        'distance': 'dist_df',
-        'heart_rate': 'heart_df',
-        'sleep': 'sleep_df',
-        'est_oxygen': 'oxy_df'
+        'steps': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTUlmEk_WBNoO1rKq8SsFL5Owd1PndQ8DsXxA9CbaJsaK6HJkD7G1mCLID-_THzPT4DDnY787S64PSh/pub?gid=1166746621&single=true&output=csv',
+        'distance': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTUlmEk_WBNoO1rKq8SsFL5Owd1PndQ8DsXxA9CbaJsaK6HJkD7G1mCLID-_THzPT4DDnY787S64PSh/pub?gid=508142528&single=true&output=csv',
+        'heart_rate': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTUlmEk_WBNoO1rKq8SsFL5Owd1PndQ8DsXxA9CbaJsaK6HJkD7G1mCLID-_THzPT4DDnY787S64PSh/pub?gid=0&single=true&output=csv',
+        'sleep': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTUlmEk_WBNoO1rKq8SsFL5Owd1PndQ8DsXxA9CbaJsaK6HJkD7G1mCLID-_THzPT4DDnY787S64PSh/pub?gid=25587178&single=true&output=csv',
+        'est_oxygen': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTUlmEk_WBNoO1rKq8SsFL5Owd1PndQ8DsXxA9CbaJsaK6HJkD7G1mCLID-_THzPT4DDnY787S64PSh/pub?gid=2146445686&single=true&output=csv'
     }
     
     try:
-        df = pd.read_pickle(file_dict[string])
+        df = pd.read_csv(file_dict[string])
         if string == 'sleep':
             df.rename(columns={'minutesAsleep':'hoursAsleep'}, inplace=True)
+            
+        with st.spinner('processing datetime'):
+            df['dateTime'] = pd.to_datetime(df['dateTime'])
+            df.set_index('dateTime', inplace=True)
+                
         return df
     
     # while deployed, this will come into play when allowing users to upload their own files
@@ -40,7 +45,7 @@ def load_data(string, list_dir = '../DanielCorley/user-site-export', save=False)
         # deciding if we will be loading jsons or csvs
         file_type = None
         try:
-            pd.read_json(f'{list_dir}/{files[0]}')
+            pd.read_json(f'{files[0]}')
             file_type = 'json'
             st.spinner('loading json')
         except:
@@ -119,7 +124,7 @@ if value != 'Select Data:':
             df['rolling'] = df.rolling(30).mean()
     
     if value == 'sleep':
-        'This may look low, but FitBit has a "sensitive" sleep setting, which is the lower. More on that [here](https://community.fitbit.com/t5/Sleep-Better/Inaccurate-Sleep-Log-Change-your-settings/td-p/1406238)'
+        'This may look like I don\'t sleep alot, but FitBit has a "sensitive" sleep setting, which is the lower. More on that [here](https://community.fitbit.com/t5/Sleep-Better/Inaccurate-Sleep-Log-Change-your-settings/td-p/1406238)'
     
     st.write(f'average {resamp} {value}: {int(average):,d}'.replace('_',' '))
     st.line_chart(df)
